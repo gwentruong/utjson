@@ -28,7 +28,7 @@ JSON *parse_boolean(char *buf);
 JSON *parse_num_int(char *buf);
 JSON *parse_num_dbl(char *buf);
 JSON *parse_string(char *buf);
-// JSON *parse_array(char *buf);
+JSON *parse_array(char *buf);
 int   prepend(JSON **head, JSON *item);
 void  reserve(JSON **head);
 int   list_length(JSON *head);
@@ -78,8 +78,10 @@ int main(int argc, char **argv)
     while ((p = tokenizer(p, token)) != NULL)
     {
         printf("%s\n", token);
-        part = which_type(token);
-        printf("### Type %d Size %d\n", part->type, part->size);
+        if ((part = which_type(token)) != NULL)
+        {
+            printf("### Type %d Size %d\n", part->type, part->size);
+        }
     }
 
     // Push and pop structural tokens
@@ -296,13 +298,13 @@ JSON *which_type(char *token)
 
     if (token[0] == '"')        // String
         p = parse_string(token);
-    else if (strcmp(token, "true") || strcmp(token, "false"))
+    else if (strcmp(token, "true") == 0 || strcmp(token, "false") == 0)
         p = parse_boolean(token);
     else if (isdigit(token[0]))
     {
         for (int i = 0; i < len; i++)
         {
-            if (token[i] == '.')
+            if (token[i] == '.' || token[i] == 'e' || token[i] == 'E')
                 is_int = 0;
         }
 
