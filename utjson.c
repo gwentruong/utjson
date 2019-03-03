@@ -30,13 +30,68 @@ JSON *parse_num_dbl(char *buf);
 JSON *parse_string(char *buf);
 JSON *parse_array(char *buf);
 int   prepend(JSON **head, JSON *item);
-void  reserve(JSON **head);
+void  reverse_list(JSON **head);
 int   list_length(JSON *head);
 char *tokenizer(char *buf_in, char *token);
 int   is_whitespace(char c);
 char *rm_leading_whitespaces(char *buf);
 int   is_structural(char c);
 JSON *which_type(char *token);
+
+int token_type(char *token)
+{
+    if (token[0] == '"')
+        return JSON_STRING;
+    else if (strcmp(token, "true") == 0 || strcmp(token, "false") == 0)
+        return JSON_BOOLEAN;
+    else if (isdigit(token[0]))
+        return JSON_NUM_INT;
+    return -1;
+}
+
+void print_json(JSON *json)
+{
+    // assume only int
+    printf("type %d, data %d\n", json->type, *(int *)json->data);
+}
+
+JSON *parse_array_of_int(char *buf)
+{
+    char  token[8192] = { '\0' };
+    char *p = buf;
+    JSON *head = NULL;
+
+    JSON *array = malloc(sizeof(JSON));
+
+    array->type = JSON_ARRAY;
+    array->next = NULL;
+
+    while ((p = tokenizer(p, token)) != NULL)
+    {
+        int t = token_type(token);
+        if (t == JSON_NUM_INT)
+        {
+            JSON *e = parse_num_int(token);
+            prepend(&head, e);
+        }
+        else if (token[0] == ',')
+            ;
+        else if (token[0] == ']')
+        {
+            reverse_list(&head);
+            array->size = list_length(head);
+            array->data = head;
+        }
+    }
+
+    // print out the list
+    for (JSON *j = head; j != NULL; j = j->next)
+    {
+        print_json(j);
+    }
+    return array;
+}
+
 
 int main(int argc, char **argv)
 {
@@ -55,13 +110,14 @@ int main(int argc, char **argv)
     printf("Size of the file %d\n", size);
     fseek(fp, 0L, SEEK_SET);
 
-    char buf[size];
-    int nitems = fread(buf, sizeof(buf), 1, fp);
+    char buf[size + 1];
+    int nitems = fread(buf, size, 1, fp);
     if (nitems != 1)
     {
         printf("Failed to read\n");
         return -1;
     }
+    buf[size] = '\0';
 
     for (i = 0; i < size; i++)
         printf("%c", buf[i]);
@@ -73,15 +129,20 @@ int main(int argc, char **argv)
     // Parse tokens
     char  token[8192] = { '\0' };
     char *p = buf;
-    JSON *part;
+    // JSON *part;
 
     while ((p = tokenizer(p, token)) != NULL)
     {
         printf("%s\n", token);
-        if ((part = which_type(token)) != NULL)
+        if (token[0] == '[')
         {
-            printf("### Type %d Size %d\n", part->type, part->size);
+            printf("shit\n");
+            JSON *a = parse_array_of_int(p);
         }
+        // if ((part = which_type(token)) != NULL)
+        // {
+        //     printf("### Type %d Size %d\n", part->type, part->size);
+        // }
     }
 
     // Push and pop structural tokens
@@ -108,16 +169,21 @@ int main(int argc, char **argv)
     return 0;
 }
 
-JSON *parse_boolean(char *buf)
+
+
+
+
+
+JSON *parse_boolean(char *token)
 {
     JSON *boolean = malloc(sizeof(JSON));
 
     boolean->type = JSON_BOOLEAN;
     boolean->size = 1;
     boolean->data = malloc(1);
-    if (strcmp(buf, "true") == 0)
+    if (strcmp(token, "true") == 0)
         *(char *)boolean->data = 1;
-    else if (strcmp(buf, "false") == 0)
+    else if (strcmp(token, "false") == 0)
         *(char *)boolean->data = 0;
     boolean->next = NULL;
 
@@ -162,15 +228,16 @@ JSON *parse_string(char *str)
     return string;
 }
 
-// JSON **parse_array(char *buf)
-// {
-//     JSON **aray = malloc(sizeof(JSON *));
-//
-//     array->type = JSON_ARRAY;
-//     array->size =
-//
-//     return array;
-// }
+JSON *parse_array(char *buf)
+{
+    JSON *array = malloc(sizeof(JSON));
+
+    array->type = JSON_ARRAY;
+    array->next = NULL;
+    // array->size =
+
+    return array;
+}
 
 int prepend(JSON **head, JSON *item)
 {
@@ -183,7 +250,7 @@ int prepend(JSON **head, JSON *item)
     return 0;
 }
 
-void reserve(JSON **head)
+void reverse_list(JSON **head)
 {
     JSON *prev = NULL;
     JSON *current = *head;
@@ -312,6 +379,11 @@ JSON *which_type(char *token)
             p = parse_num_int(token);
         else
             p = parse_num_dbl(token);
+    }
+    else if (strcmp(token, "[") == 0)
+    {
+        printf("array\n");
+        p = NULL;
     }
     else
     {
