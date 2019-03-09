@@ -21,7 +21,8 @@ typedef struct json {
 
 typedef struct kv {
     char *key;
-    void *val;
+    JSON *val;
+    struct kv *next;
 } KV;
 
 JSON *parse_boolean(char *buf);
@@ -29,17 +30,21 @@ JSON *parse_num_int(char *buf);
 JSON *parse_num_dbl(char *buf);
 JSON *parse_string(char *buf);
 JSON *parse_array(char **buf);
-int   prepend(JSON **head, JSON *item);
-void  reverse_list(JSON **head);
-int   list_length(JSON *head);
+JSON *parse_object(char **buf);
+int   prepend_json(JSON **head, JSON *item);
+void  reverse_json_list(JSON **head);
+int   array_length(JSON *head);
 char *tokenizer(char *buf_in, char *token);
 int   is_whitespace(char c);
 char *rm_leading_whitespaces(char *buf);
 int   is_structural(char c);
-JSON *which_type(char *token);
 char *show_type(JSON *item);
 int   token_type(char *token);
 void print_json(JSON *json);
+KV   *object_kv(char **buf, char *key);
+int   prepend_kv(KV **head, KV *item);
+void  reverse_kv_list(KV **head);
+int   object_length(KV *head);
 
 int main(int argc, char **argv)
 {
@@ -77,11 +82,9 @@ int main(int argc, char **argv)
 
     while ((p = tokenizer(p, token)) != NULL)
     {
-        printf("%s\n", token);
-        if (token[0] == '[')
+        if (token[0] == '{')
         {
-            printf("shit\n");
-            a = parse_array(&p);
+            a = parse_object(&p);
             print_json(a);
         }
     }
@@ -182,34 +185,39 @@ JSON *parse_array(char **buf)
         if (t == JSON_NUM_INT)
         {
             e = parse_num_int(token);
-            prepend(&head, e);
+            prepend_json(&head, e);
         }
         else if (t == JSON_NUM_DBL)
         {
             e = parse_num_dbl(token);
-            prepend(&head, e);
+            prepend_json(&head, e);
         }
         else if (t == JSON_BOOLEAN)
         {
             e = parse_boolean(token);
-            prepend(&head, e);
+            prepend_json(&head, e);
         }
         else if (t == JSON_STRING)
         {
             e = parse_string(token);
-            prepend(&head, e);
+            prepend_json(&head, e);
         }
         else if (token[0] == ',')
             ;
         else if (token[0] == '[')
         {
             e = parse_array(&p);
-            prepend(&head, e);
+            prepend_json(&head, e);
+        }
+        else if (token[0] == '{')
+        {
+            e = parse_object(&p);
+            prepend_json(&head, e);
         }
         else if (token[0] == ']')
         {
-            reverse_list(&head);
-            array->size = list_length(head);
+            reverse_json_list(&head);
+            array->size = array_length(head);
             array->data = head;
             *buf = p;
             break;
@@ -218,7 +226,7 @@ JSON *parse_array(char **buf)
     return array;
 }
 
-int prepend(JSON **head, JSON *item)
+int prepend_json(JSON **head, JSON *item)
 {
     if (item == NULL)
         return -1;
@@ -229,7 +237,7 @@ int prepend(JSON **head, JSON *item)
     return 0;
 }
 
-void reverse_list(JSON **head)
+void reverse_json_list(JSON **head)
 {
     JSON *prev = NULL;
     JSON *current = *head;
@@ -246,7 +254,7 @@ void reverse_list(JSON **head)
     *head = prev;
 }
 
-int list_length(JSON *head)
+int array_length(JSON *head)
 {
     int len = 0;
 
@@ -336,43 +344,6 @@ int is_structural(char c)
     return 0;
 }
 
-JSON *which_type(char *token)
-{
-    JSON *p;
-    int   is_int = 1;
-    int   len    = strlen(token);
-
-    if (token[0] == '"')        // String
-        p = parse_string(token);
-    else if (strcmp(token, "true") == 0 || strcmp(token, "false") == 0)
-        p = parse_boolean(token);
-    else if (isdigit(token[0]))
-    {
-        for (int i = 0; i < len; i++)
-        {
-            if (token[i] == '.' || token[i] == 'e' || token[i] == 'E')
-                is_int = 0;
-        }
-
-        if (is_int)
-            p = parse_num_int(token);
-        else
-            p = parse_num_dbl(token);
-    }
-    else if (strcmp(token, "[") == 0)
-    {
-        printf("array\n");
-        p = NULL;
-    }
-    else
-    {
-        printf("Unknown tokens\n");
-        p = NULL;
-    }
-
-    return p;
-}
-
 char *show_type(JSON *item)
 {
     switch (item->type)
@@ -418,13 +389,14 @@ int token_type(char *token)
     }
     else if (strcmp(token, "[") == 0)
         return JSON_ARRAY;
+    else if (strcmp(token, "{") == 0)
+        return JSON_OBJECT;
 
     return -1;
 }
 
 void print_json(JSON *json)
 {
-    // assume only int
     switch(json->type)
     {
         case JSON_ARRAY:
@@ -445,8 +417,123 @@ void print_json(JSON *json)
         case JSON_STRING:
             printf("type %s, data %s\n", show_type(json), json->data);
             break;
+        case JSON_OBJECT:
+            printf("type %s\n", show_type(json));
+            for (KV *p = json->data; p!= NULL; p = p->next)
+            {
+                printf("Key %s\n", p->key);
+                print_json(p->val);
+            }
+            break;
         default:
             printf("Unknown\n");
             break;
     }
+}
+
+JSON *parse_object(char **buf)
+{
+    char  token[8192] = { '\0' };
+    char *p    = *buf - 1;
+    KV   *head = NULL;
+    KV   *e;
+    JSON *object = malloc(sizeof(JSON));
+
+    object->type = JSON_OBJECT;
+    object->next = NULL;
+
+    while((p = tokenizer(p, token)) != NULL)
+    {
+        if (token[0] == '"')
+        {
+            e = object_kv(&p, token);
+            prepend_kv(&head, e);
+        }
+        else if (token[0] == ',')
+            ;
+        else if (token[0] == '}')
+        {
+            reverse_kv_list(&head);
+            object->size = object_length(head);
+            object->data = head;
+            *buf = p;
+            break;
+        }
+    }
+
+    return object;
+}
+
+KV *object_kv(char **buf, char *key)
+{
+    KV *key_value = malloc(sizeof(KV));
+    char *p       = *buf;
+    char token[8192] = { '\0' };
+    JSON *value;
+
+    while ((p = tokenizer(p, token)) != NULL)
+    {
+        int t = token_type(token);
+        if (t == JSON_NUM_INT)
+            value = parse_num_int(token);
+        else if (t == JSON_NUM_DBL)
+            value = parse_num_dbl(token);
+        else if (t == JSON_BOOLEAN)
+            value = parse_boolean(token);
+        else if (t == JSON_STRING)
+            value = parse_string(token);
+        else if (t == JSON_ARRAY)
+            value = parse_array(&p);
+        else if (t == JSON_OBJECT)
+            value = parse_object(&p);
+        else if (token[0] == ':')
+            ;
+        else if (token[0] == ',' || token[0] == '}')
+            break;
+    }
+
+    key_value->key = strdup(key);
+    key_value->next = NULL;
+    key_value->val = value;
+    *buf = p - 1;
+
+    return key_value;
+}
+
+int prepend_kv(KV **head, KV *item)
+{
+    if (item == NULL)
+        return -1;
+
+    item->next = *head;
+    *head = item;
+
+    return 0;
+}
+
+void reverse_kv_list(KV **head)
+{
+    KV *prev = NULL;
+    KV *current = *head;
+    KV *next;
+
+    while (current != NULL)
+    {
+        next = current->next;
+        current->next = prev;
+        prev = current;
+        current = next;
+    }
+
+    *head = prev;
+}
+
+int object_length(KV *head)
+{
+    int len = 0;
+
+    for (KV *p = head; p != NULL; p = p->next)
+        len++;
+
+    return len;
 }
