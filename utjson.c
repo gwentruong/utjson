@@ -25,6 +25,7 @@ typedef struct kv {
     struct kv *next;
 } KV;
 
+JSON *parse_json(char *buf);
 JSON *parse_boolean(char *buf);
 JSON *parse_num_int(char *buf);
 JSON *parse_num_dbl(char *buf);
@@ -45,13 +46,13 @@ KV   *object_kv(char **buf, char *key);
 int   prepend_kv(KV **head, KV *item);
 void  reverse_kv_list(KV **head);
 int   object_length(KV *head);
+void  free_json(JSON *json);
 
 int main(int argc, char **argv)
 {
     char *file = argv[1];
     FILE *fp   = fopen(file, "r");
     int   i;
-    int   j = 0;
     if (fp == NULL)
     {
         printf("File not found\n");
@@ -75,20 +76,9 @@ int main(int argc, char **argv)
     for (i = 0; i < size; i++)
         printf("%c", buf[i]);
 
-    // Parse tokens
-    char  token[8192] = { '\0' };
-    char *p = buf;
-    JSON *a;
+    JSON *js = parse_json(buf);
 
-    while ((p = tokenizer(p, token)) != NULL)
-    {
-        if (token[0] == '{')
-        {
-            a = parse_object(&p);
-            print_json(a);
-        }
-    }
-
+#if 0
     // Push and pop structural tokens
     char stack[128] = { '\0' };
     for (i = 0; i < size; i++)
@@ -108,7 +98,9 @@ int main(int argc, char **argv)
             printf("++++%d\t%s\n", i, stack);
         }
     }
+#endif
 
+    free_json(js);
     fclose(fp);
     return 0;
 }
@@ -173,6 +165,7 @@ JSON *parse_array(char **buf)
     char *p = *buf;
     JSON *head = NULL;
     JSON *e;
+    int   t;
 
     JSON *array = malloc(sizeof(JSON));
 
@@ -181,7 +174,7 @@ JSON *parse_array(char **buf)
 
     while ((p = tokenizer(p, token)) != NULL)
     {
-        int t = token_type(token);
+        t = token_type(token);
         if (t == JSON_NUM_INT)
         {
             e = parse_num_int(token);
@@ -367,8 +360,8 @@ char *show_type(JSON *item)
 
 int token_type(char *token)
 {
-    int   is_int = 1;
-    int   len    = strlen(token);
+    int is_int = 1;
+    int len    = strlen(token);
 
     if (token[0] == '"')
         return JSON_STRING;
@@ -400,28 +393,28 @@ void print_json(JSON *json)
     switch(json->type)
     {
         case JSON_ARRAY:
-            printf("type %s\n", show_type(json));
+            printf("%s\n", show_type(json));
             for (JSON *p = json->data; p != NULL; p = p->next)
                 print_json(p);
             break;
         case JSON_BOOLEAN:
-            printf("type %s, data %s\n", show_type(json),
+            printf("%s (%s)\n", show_type(json),
                    *(int *)json->data ? "true" : "false");
             break;
         case JSON_NUM_INT:
-            printf("type %s, data %d\n", show_type(json), *(int *)json->data);
+            printf("%s (%d)\n", show_type(json), *(int *)json->data);
             break;
         case JSON_NUM_DBL:
-            printf("type %s, data %f\n", show_type(json), *(double *)json->data);
+            printf("%s (%f)\n", show_type(json), *(double *)json->data);
             break;
         case JSON_STRING:
-            printf("type %s, data %s\n", show_type(json), json->data);
+            printf("%s (%s)\n", show_type(json), json->data);
             break;
         case JSON_OBJECT:
-            printf("type %s\n", show_type(json));
+            printf("%s\n", show_type(json));
             for (KV *p = json->data; p!= NULL; p = p->next)
             {
-                printf("Key %s\n", p->key);
+                printf("%s -> ", p->key);
                 print_json(p->val);
             }
             break;
@@ -466,14 +459,15 @@ JSON *parse_object(char **buf)
 
 KV *object_kv(char **buf, char *key)
 {
-    KV *key_value = malloc(sizeof(KV));
-    char *p       = *buf;
     char token[8192] = { '\0' };
+    KV  *key_value   = malloc(sizeof(KV));
+    char *p          = *buf;    
     JSON *value;
+    int t;
 
     while ((p = tokenizer(p, token)) != NULL)
     {
-        int t = token_type(token);
+        t = token_type(token);
         if (t == JSON_NUM_INT)
             value = parse_num_int(token);
         else if (t == JSON_NUM_DBL)
@@ -536,4 +530,64 @@ int object_length(KV *head)
         len++;
 
     return len;
+}
+
+JSON *parse_json(char *buf)
+{
+    char  token[8192] = { '\0' };
+    char *p = buf;
+    JSON *js;
+    int   t;
+
+    while ((p = tokenizer(p, token)) != NULL)
+    {
+        t = token_type(token);
+        if (t == JSON_OBJECT)
+            js = parse_object(&p);
+        else if (t == JSON_ARRAY)
+            js = parse_array(&p);
+        else if (t == JSON_BOOLEAN)
+            js = parse_boolean(token);
+        else if (t == JSON_NUM_INT)
+            js = parse_num_int(token);
+        else if (t == JSON_NUM_DBL)
+            js = parse_num_dbl(token);
+        else if (t == JSON_STRING)
+            js = parse_string(token);
+    }
+    print_json(js);
+
+    return js;
+}
+
+void free_json(JSON *json)
+{
+    KV   *head_kv;
+    JSON *head_js;
+
+    switch (json->type)
+    {
+        case JSON_OBJECT:
+            head_kv = json->data;
+            for (KV *kv = head_kv; kv != NULL; kv = head_kv)
+            {
+                head_kv = head_kv->next;
+                free(kv->key);
+                free_json(kv->val);
+                free(kv);
+            }
+            break;
+        case JSON_ARRAY:
+            head_js = json->data;
+            for (JSON *js = head_js; js != NULL; js = head_js)
+            {
+                head_js = head_js->next;
+                free_json(js);
+            }
+            break;
+        default:
+            free(json->data);
+            break;
+    }
+    free(json);
 }
