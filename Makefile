@@ -1,2 +1,2 @@
 all:
-	gcc -g -Wall main.c utjson.c -o utjson
+	gcc -g -Wall main.c parse.c token.c -o utjson
