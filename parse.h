@@ -1,5 +1,5 @@
-#ifndef __UTJSON_H
-#define __UTJSON_H
+#ifndef __PARSE_H
+#define __PARSE_H
 
 typedef enum json_type {
     JSON_OBJECT  = 0,
@@ -44,10 +44,6 @@ void  reverse_kv_list(KV **head);
 int   object_length(KV *head);
 
 // Support parsing JSON in general
-int   is_structural(char c);                // Check if token is structural
-int   is_whitespace(char c);
-char *rm_leading_whitespaces(char *buf);    // Delete whitespace in between
-char *tokenizer(char *buf_in, char *token); // Take apart each tokens
 char *show_type(JSON *item);                // Return string of each token type
 int   token_type(char *token);              // Return enum to identify token type
 void  print_json(JSON *json);

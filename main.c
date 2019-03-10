@@ -2,7 +2,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
-#include "utjson.h"
+#include "parse.h"
+#include "token.h"
 
 int main(int argc, char **argv)
 {
